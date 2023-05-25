@@ -1,4 +1,7 @@
 __pycache__
-outputs/
+outputs
 .ipynb_checkpoints
 words.txt
+attention.egg-info/
+build/
+input/
