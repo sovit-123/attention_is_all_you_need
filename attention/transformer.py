@@ -349,7 +349,7 @@ class Transformer(nn.Module):
         Returns:
             out_labels: Final prediction sequence
         """
-        tgt_mask = self.make_tgt_mask(tgt)
+        tgt_mask = self.make_tgt_mask(tgt).to(self.device)
         enc_out = self.encoder(src)
         out_labels = []
         batch_size, seq_len = src.shape[0], src.shape[1]
