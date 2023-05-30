@@ -232,8 +232,8 @@ class DecoderBlock(nn.Module):
         Returns:
             out: Output of the transformer block.
         """
-        atteneded = self.attention(x, x, x, mask=mask)
-        value = self.dropout(self.norm(atteneded + x))
+        attended = self.attention(x, x, x, mask=mask)
+        value = self.dropout(self.norm(attended + x))
         out = self.transformer_block(key, query, value)
         return out
     
@@ -320,7 +320,7 @@ class Transformer(nn.Module):
         self.decoder = TransformerDecoder(
             tgt_vocab_size,
             embed_dim,
-            seq_len,
+            seq_len-1,
             num_layers,
             expansion_factor,
             n_heads
