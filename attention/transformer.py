@@ -23,7 +23,7 @@ class PositionalEncoding(nn.Module):
         div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0).transpose(0, 1)
+        pe = pe.unsqueeze(0)
         self.register_buffer('pe', pe)
 
     def forward(self, x):
@@ -34,7 +34,6 @@ class PositionalEncoding(nn.Module):
             x: [sequence length, batch size, embed dim]
             output: [sequence length, batch size, embed dim]
         """
-
         x = x + self.pe[:x.size(0), :]
         return self.dropout(x)
     
@@ -95,6 +94,7 @@ class MultiHeadAttention(nn.Module):
             f"Input embedding {inp_emb} should match layer embedding {self.embed_dim}"
         
         seq_len_query = query.size(1)
+        seq_len_value = value.size(1)
 
         key = key.view(
             batch_size, seq_len, self.n_heads, self.head_dim
@@ -103,7 +103,7 @@ class MultiHeadAttention(nn.Module):
             batch_size, seq_len_query, self.n_heads, self.head_dim
         ) # [bs, seq_len, n_heads, head_dim] ~ [32, 1024, 8, 64]
         value = value.view(
-            batch_size, seq_len, self.n_heads, self.head_dim
+            batch_size, seq_len_value, self.n_heads, self.head_dim
         ) # [bs, seq_len, n_heads, head_dim] ~ [32, 1024, 8, 64]
 
         k = self.k(key)
@@ -250,7 +250,7 @@ class TransformerDecoder(nn.Module):
         """
         :param tgt_vocab_size: Target vocabuluary size.
         :param embed_dim: Embedding dimension.
-        :param seq_len: Input sequence lenght.
+        :param seq_len: Input sequence length.
         :param num_layers: Number of transformer layers.
         :param expansion_factor: Factor to determine the intermediate
             output feature dimension of linear layers.
@@ -320,7 +320,7 @@ class Transformer(nn.Module):
         self.decoder = TransformerDecoder(
             tgt_vocab_size,
             embed_dim,
-            seq_len-1,
+            seq_len,
             num_layers,
             expansion_factor,
             n_heads
