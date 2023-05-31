@@ -34,7 +34,7 @@ class PositionalEncoding(nn.Module):
             x: [sequence length, batch size, embed dim]
             output: [sequence length, batch size, embed dim]
         """
-        x = x + self.pe[:x.size(0), :]
+        x = x + self.pe[:, :x.size(1)]
         return self.dropout(x)
     
 class Embedding(nn.Module):
@@ -103,7 +103,7 @@ class MultiHeadAttention(nn.Module):
             batch_size, seq_len_query, self.n_heads, self.head_dim
         ) # [bs, seq_len, n_heads, head_dim] ~ [32, 1024, 8, 64]
         value = value.view(
-            batch_size, seq_len_value, self.n_heads, self.head_dim
+            batch_size, seq_len, self.n_heads, self.head_dim
         ) # [bs, seq_len, n_heads, head_dim] ~ [32, 1024, 8, 64]
 
         k = self.k(key)
