@@ -89,21 +89,20 @@ class MultiHeadAttention(nn.Module):
         """
         batch_size = key.size(0) # Batch size.
         seq_len = key.size(1) # Max. sequence length.
+        seq_len_query = query.size(1)
+        seq_len_value = value.size(1)
         inp_emb = key.size(2) # Embedding dim.
         assert inp_emb == self.embed_dim, \
             f"Input embedding {inp_emb} should match layer embedding {self.embed_dim}"
-        
-        seq_len_query = query.size(1)
-        seq_len_value = value.size(1)
 
         key = key.view(
             batch_size, seq_len, self.n_heads, self.head_dim
         ) # [bs, seq_len, n_heads, head_dim] ~ [32, 1024, 8, 64]
         query = query.view(
-            batch_size, seq_len_query, self.n_heads, self.head_dim
+            batch_size, seq_len, self.n_heads, self.head_dim
         ) # [bs, seq_len, n_heads, head_dim] ~ [32, 1024, 8, 64]
         value = value.view(
-            batch_size, seq_len, self.n_heads, self.head_dim
+            batch_size, seq_len_value, self.n_heads, self.head_dim
         ) # [bs, seq_len, n_heads, head_dim] ~ [32, 1024, 8, 64]
 
         k = self.k(key)
