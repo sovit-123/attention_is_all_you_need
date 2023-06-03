@@ -72,11 +72,11 @@ class MultiHeadAttention(nn.Module):
         self.head_dim = int(self.embed_dim / self.n_heads)
 
         # Query matrix (64, 64).
-        self.q = nn.Linear(self.head_dim, self.head_dim)
+        self.q = nn.Linear(self.embed_dim, self.embed_dim)
         # Key matrix (64, 64).
-        self.k = nn.Linear(self.head_dim, self.head_dim)
+        self.k = nn.Linear(self.embed_dim, self.embed_dim)
         # Value matrix (64, 64).
-        self.v = nn.Linear(self.head_dim, self.head_dim)
+        self.v = nn.Linear(self.embed_dim, self.embed_dim)
 
         self.out = nn.Linear(self.n_heads*self.head_dim, self.embed_dim)
 
@@ -88,15 +88,19 @@ class MultiHeadAttention(nn.Module):
         :param mask: Whether masking or not, for decoder.
         """
         batch_size = key.size(0) # Batch size.
-        seq_len = key.size(1) # Max. sequence length.
+        seq_len_key = key.size(1) # Max. sequence length.
         seq_len_query = query.size(1)
         seq_len_value = value.size(1)
         inp_emb = key.size(2) # Embedding dim.
         assert inp_emb == self.embed_dim, \
             f"Input embedding {inp_emb} should match layer embedding {self.embed_dim}"
 
+        key = self.k(key)
+        query = self.q(query)
+        value = self.v(value)
+
         key = key.view(
-            batch_size, seq_len, self.n_heads, self.head_dim
+            batch_size, seq_len_key, self.n_heads, self.head_dim
         ) # [bs, seq_len, n_heads, head_dim] ~ [32, 1024, 8, 64]
         query = query.view(
             batch_size, seq_len_query, self.n_heads, self.head_dim
@@ -105,27 +109,18 @@ class MultiHeadAttention(nn.Module):
             batch_size, seq_len_value, self.n_heads, self.head_dim
         ) # [bs, seq_len, n_heads, head_dim] ~ [32, 1024, 8, 64]
 
-        k = self.k(key)
-        q = self.q(query)
-        v = self.v(value)
-
-        k = k.transpose(1, 2) # [batch_size, n_heads, seq_len, head_dim]
-        q = q.transpose(1, 2) # [batch_size, n_heads, seq_len, head_dim]
-        v = v.transpose(1, 2) # [batch_size, n_heads, seq_len, head_dim] 
-
         # Scaled-dot product attention.
         # Transposed key for matrix multiplication.
-        k_transposed = k.transpose(-1, -2)
-        dot = torch.matmul(q, k_transposed)
+        dot = torch.einsum("nqhd,nkhd->nhqk", [query, key])
         if mask is not None:
             dot = dot.masked_fill(mask == 0, float('-1e20'))
         # Scaling.
         dot = dot / math.sqrt(self.head_dim) # / 64.
         scores = F.softmax(dot, dim=-1)
         # Dot product with value matix.
-        scores = torch.matmul(scores, v)
+        scores = torch.einsum("nhql,nlhd->nqhd", [scores, value])
 
-        concat = scores.transpose(1,2).contiguous().view(
+        concat = scores.contiguous().view(
             batch_size, seq_len_query, self.head_dim*self.n_heads
         )
 
@@ -162,7 +157,7 @@ class TransformerBlock(nn.Module):
             out: Output of the transformer block.
         """
         x = self.attention(key, query, value)
-        x = x + value
+        x = x + query
         x = self.dropout1(self.norm1(x))
         ff = self.ffn(x)
         x = ff + x
@@ -222,7 +217,7 @@ class DecoderBlock(nn.Module):
             embed_dim, expansion_factor, n_heads
         )
 
-    def forward(self, key, query, x, mask):
+    def forward(self, x, value, key, mask):
         """
         :param key: Key vector.
         :param query: Query vector.
@@ -232,7 +227,7 @@ class DecoderBlock(nn.Module):
             out: Output of the transformer block.
         """
         attended = self.attention(x, x, x, mask=mask)
-        value = self.dropout(self.norm(attended + x))
+        query = self.dropout(self.norm(attended + x))
         out = self.transformer_block(key, query, value)
         return out
     
@@ -280,7 +275,7 @@ class TransformerDecoder(nn.Module):
         x = self.postional_encoding(x)
         x = self.dropout(x)
         for layer in self.layers:
-            x = layer(enc_out, x, enc_out, mask)
+            x = layer(x, enc_out, enc_out, mask)
         out = F.softmax(self.fc(x))
         return out
     
