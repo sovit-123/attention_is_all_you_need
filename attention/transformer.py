@@ -119,7 +119,7 @@ class MultiHeadAttention(nn.Module):
         k_transposed = k.transpose(-1, -2)
         dot = torch.matmul(q, k_transposed)
         if mask is not None:
-            dot = dot.masked_fill(mask == 0, float('-1e20'))
+            dot = dot.masked_fill_(mask == 0, float('-1e20'))
         # Scaling.
         dot = dot / math.sqrt(self.head_dim) # / 64.
         scores = F.softmax(dot, dim=-1)
@@ -153,7 +153,7 @@ class TransformerBlock(nn.Module):
         self.dropout1 = nn.Dropout(0.2)
         self.dropout2 = nn.Dropout(0.2)
 
-    def forward(self, key, query, value):
+    def forward(self, key, query, value, mask=None):
         """
         :param key: Key vector.
         :param query: Query vector.
@@ -162,7 +162,7 @@ class TransformerBlock(nn.Module):
         Returns:
             out: Output of the transformer block.
         """
-        x = self.attention(key, query, value)
+        x = self.attention(key, query, value, mask)
         x = x + value
         x = self.dropout1(self.norm1(x))
         ff = self.ffn(x)
@@ -200,11 +200,11 @@ class TransformerEncoder(nn.Module):
             for _ in range(num_layers)]
         )
 
-    def forward(self, x):
+    def forward(self, x, mask=None):
         x = self.embedding(x)
         out = self.positional_encoding(x)
         for layer in self.layers:
-            out = layer(out, out, out) # Query, Key, Value are the same.
+            out = layer(out, out, out, mask) # Query, Key, Value are the same.
         return out
     
 class DecoderBlock(nn.Module):
@@ -223,7 +223,7 @@ class DecoderBlock(nn.Module):
             embed_dim, expansion_factor, n_heads
         )
 
-    def forward(self, key, query, x, mask):
+    def forward(self, x, enc_out, src_mask=None, tgt_mask=None):    
         """
         :param key: Key vector.
         :param query: Query vector.
@@ -232,9 +232,10 @@ class DecoderBlock(nn.Module):
         Returns:
             out: Output of the transformer block.
         """
-        atteneded = self.attention(x, x, x, mask=mask)
-        value = self.dropout(self.norm(atteneded + x))
-        out = self.transformer_block(key, query, value)
+        attended = self.attention(x, x, x, mask=tgt_mask)
+        x = self.dropout(self.norm(attended + x))
+        attended = self.attention(enc_out, x, enc_out, mask=src_mask)
+        out = self.dropout(self.norm(x + attended))
         return out
     
 class TransformerDecoder(nn.Module):
@@ -268,7 +269,7 @@ class TransformerDecoder(nn.Module):
         self.fc = nn.Linear(embed_dim, tgt_vocab_size)
         self.dropout = nn.Dropout(0.2)
 
-    def forward(self, x, enc_out, mask):
+    def forward(self, x, enc_out, src_mask, tgt_mask):
         """
         :param x: Input target vector.
         :param enc_out: Encoder layer output.
@@ -281,8 +282,8 @@ class TransformerDecoder(nn.Module):
         x = self.postional_encoding(x)
         x = self.dropout(x)
         for layer in self.layers:
-            x = layer(enc_out, x, enc_out, mask)
-        out = F.softmax(self.fc(x))
+            x = layer(x, enc_out, src_mask, tgt_mask)
+        out = self.fc(x)
         return out
     
 class Transformer(nn.Module):
@@ -327,19 +328,43 @@ class Transformer(nn.Module):
         )
         self.device=device
 
-    def make_tgt_mask(self, tgt):
+    def make_tgt_mask(self, tgt, pad_token_id=1):
         """
         :param tgt: Target sequence.
-        
+        :param pad_token_id: Padding token ID, default 1.
         Returns:
             tgt_mask: Target mask.
         """
-        batch_size, tgt_len = tgt.shape
-        # Lower triangular part of matrix filled with ones.
-        tgt_mask = torch.tril(
-            torch.ones((tgt_len, tgt_len))
-        ).expand(batch_size, 1, tgt_len, tgt_len)
+        batch_size = tgt.shape[0]
+        device = tgt.device
+        # Some help from here:
+        # https://github.com/gordicaleksa/pytorch-original-transformer/blob/main/utils/data_utils.py
+        # Same as src_mask but we additionally want to mask tokens from looking forward into the future tokens
+        # Note: wherever the mask value is true we want to attend to that token, otherwise we mask (ignore) it.
+        sequence_length = tgt.shape[1]  # trg_token_ids shape = (B, T) where T max trg token-sequence length
+        trg_padding_mask = (tgt != pad_token_id).view(batch_size, 1, 1, -1)  # shape = (B, 1, 1, T)
+        trg_no_look_forward_mask = torch.triu(torch.ones((
+            1, 1, sequence_length, sequence_length), device=device
+        ) == 1).transpose(2, 3)
+
+        # logic AND operation (both padding mask and no-look-forward must be true to attend to a certain target token)
+        tgt_mask = trg_padding_mask & trg_no_look_forward_mask  # final shape = (B, 1, T, T)
         return tgt_mask
+    
+    def make_src_mask(self, src, pad_token_id=1):
+        """
+        :param src: Source sequence.
+        :param pad_token_id: Padding token ID, default 1.
+        Returns:
+            src_mask: Source mask.
+        """
+        batch_size = src.shape[0]
+        # Some help from here:
+        # https://github.com/gordicaleksa/pytorch-original-transformer/blob/main/utils/data_utils.py
+        # src_mask shape = (B, 1, 1, S) check out attention function in transformer_model.py where masks are applied
+        # src_mask only masks pad tokens as we want to ignore their representations (no information in there...)
+        src_mask = (src != pad_token_id).view(batch_size, 1, 1, -1)
+        return src_mask
     
     def decode(self, src, tgt):
         """
@@ -350,14 +375,19 @@ class Transformer(nn.Module):
             out_labels: Final prediction sequence
         """
         tgt_mask = self.make_tgt_mask(tgt)
+        src_mask = self.make_src_mask(src)
         enc_out = self.encoder(src)
         out_labels = []
         batch_size, seq_len = src.shape[0], src.shape[1]
         out = tgt
         for i in range(seq_len):
-            out = self.decoder(out, enc_out, tgt_mask)
-            out = out[:, -1, :]
-            out = out.argmax(-1)
+            out = F.log_softmax(self.decoder(out, enc_out, src_mask, tgt_mask), dim=-1)
+            # out = out[:, -1, :]
+            out = out.reshape(-1, out.shape[-1])
+            # out = out.argmax(-1)
+            num_of_trg_tokens = len(tgt[0])
+            out = out[num_of_trg_tokens-1::num_of_trg_tokens]
+            out = torch.argmax(out, dim=-1)
             out_labels.append(out.item())
             out = torch.unsqueeze(out, 0)
         return out_labels
@@ -370,7 +400,8 @@ class Transformer(nn.Module):
         Returns:
             out: Output vector containing probability of each token.
         """
+        src_mask = self.make_src_mask(src).to(self.device)
         tgt_mask = self.make_tgt_mask(tgt).to(self.device)
-        enc_out = self.encoder(src)
-        out = self.decoder(tgt, enc_out, tgt_mask)
+        enc_out = self.encoder(src, src_mask)
+        out = self.decoder(tgt, enc_out, src_mask, tgt_mask)
         return out
