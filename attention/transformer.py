@@ -134,7 +134,7 @@ class MultiHeadAttention(nn.Module):
         return out
     
 class TransformerBlock(nn.Module):
-    def __init__(self, embed_dim, expansion_factor=4, n_heads=8):
+    def __init__(self, embed_dim, expansion_factor=4, n_heads=8, dropout=0.3):
         super(TransformerBlock, self).__init__()
         """
         :param embed_dim: Embedding dimension.
@@ -150,8 +150,8 @@ class TransformerBlock(nn.Module):
             nn.ReLU(),
             nn.Linear(expansion_factor*embed_dim, embed_dim)
         )
-        self.dropout1 = nn.Dropout(0.2)
-        self.dropout2 = nn.Dropout(0.2)
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
 
     def forward(self, key, query, value, mask=None):
         """
@@ -178,7 +178,8 @@ class TransformerEncoder(nn.Module):
             embed_dim, 
             num_layers=6,
             expansion_factor=4,
-            n_heads=8
+            n_heads=8,
+            dropout=0.3
     ):
         """
         :param seq_len: Input sequence length.
@@ -196,7 +197,7 @@ class TransformerEncoder(nn.Module):
         self.embedding = Embedding(vocab_size, embed_dim)
         self.positional_encoding = PositionalEncoding(seq_len, embed_dim)
         self.layers = nn.ModuleList(
-            [TransformerBlock(embed_dim, expansion_factor, n_heads) \
+            [TransformerBlock(embed_dim, expansion_factor, n_heads, dropout) \
             for _ in range(num_layers)]
         )
 
@@ -208,7 +209,7 @@ class TransformerEncoder(nn.Module):
         return out
     
 class DecoderBlock(nn.Module):
-    def __init__(self, embed_dim, expansion_factor=4, n_heads=8):
+    def __init__(self, embed_dim, expansion_factor=4, n_heads=8, dropout=0.3):
         """
         :param embed_dim: Embedding dimension.
         :param exansion_factor: Factor determining the feature dimension
@@ -218,9 +219,9 @@ class DecoderBlock(nn.Module):
         super(DecoderBlock, self).__init__()
         self.attention = MultiHeadAttention(embed_dim, n_heads)
         self.norm = nn.LayerNorm(embed_dim)
-        self.dropout = nn.Dropout(0.2)
+        self.dropout = nn.Dropout(dropout)
         self.transformer_block = TransformerBlock(
-            embed_dim, expansion_factor, n_heads
+            embed_dim, expansion_factor, n_heads, dropout
         )
 
     def forward(self, x, enc_out, src_mask=None, tgt_mask=None):    
@@ -246,7 +247,8 @@ class TransformerDecoder(nn.Module):
             seq_len, 
             num_layers=6,
             expansion_factor=4,
-            n_heads=8 
+            n_heads=8,
+            dropout=0.3
     ):
         """
         :param tgt_vocab_size: Target vocabuluary size.
@@ -262,12 +264,12 @@ class TransformerDecoder(nn.Module):
         self.postional_encoding = PositionalEncoding(seq_len, embed_dim)
         self.layers = nn.ModuleList(
             [
-                DecoderBlock(embed_dim, expansion_factor, n_heads) \
+                DecoderBlock(embed_dim, expansion_factor, n_heads, dropout) \
                 for _ in range(num_layers)
             ]
         )
         self.fc = nn.Linear(embed_dim, tgt_vocab_size)
-        self.dropout = nn.Dropout(0.2)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, enc_out, src_mask, tgt_mask):
         """
@@ -296,6 +298,7 @@ class Transformer(nn.Module):
             num_layers=6,
             expansion_factor=4,
             n_heads=8,
+            dropout=0.3,
             device='cpu'
     ):
         """
@@ -316,7 +319,8 @@ class Transformer(nn.Module):
             embed_dim,
             num_layers,
             expansion_factor,
-            n_heads
+            n_heads,
+            dropout
         )
         self.decoder = TransformerDecoder(
             tgt_vocab_size,
@@ -324,7 +328,8 @@ class Transformer(nn.Module):
             seq_len,
             num_layers,
             expansion_factor,
-            n_heads
+            n_heads,
+            dropout
         )
         self.device=device
 
