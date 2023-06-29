@@ -135,13 +135,14 @@ class MultiHeadAttention(nn.Module):
         return out
     
 class TransformerBlock(nn.Module):
-    def __init__(self, embed_dim, expansion_factor=4, n_heads=8):
+    def __init__(self, embed_dim, expansion_factor=4, n_heads=8, dropout=0.3):
         super(TransformerBlock, self).__init__()
         """
         :param embed_dim: Embedding dimension.
         :param expansion_factor: Factor determining the output dimension
             of the linear layer.
         :param n_heads: Number of attention heads.
+        :param dropout: Dropout factor.
         """ 
         self.attention = MultiHeadAttention(embed_dim, n_heads)
         self.norm1 = nn.LayerNorm(embed_dim)
@@ -151,10 +152,10 @@ class TransformerBlock(nn.Module):
             nn.ReLU(),
             nn.Linear(expansion_factor*embed_dim, embed_dim)
         )
-        self.dropout1 = nn.Dropout(0.2)
-        self.dropout2 = nn.Dropout(0.2)
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
 
-    def forward(self, key, query, value):
+    def forward(self, key, query, value, mask=None):
         """
         :param key: Key vector.
         :param query: Query vector.
@@ -163,7 +164,7 @@ class TransformerBlock(nn.Module):
         Returns:
             out: Output of the transformer block.
         """
-        x = self.attention(key, query, value)
+        x = self.attention(key, query, value, mask)
         x = x + value
         x = self.dropout1(self.norm1(x))
         ff = self.ffn(x)
@@ -179,7 +180,8 @@ class TransformerEncoder(nn.Module):
             embed_dim, 
             num_layers=6,
             expansion_factor=4,
-            n_heads=8
+            n_heads=8,
+            dropout=0.3
     ):
         """
         :param seq_len: Input sequence length.
@@ -189,6 +191,7 @@ class TransformerEncoder(nn.Module):
         :param expansion_factor: Factor determining the output feature
             dimension of the linear layers.
         :param n_heads: Number of attention heads.
+        :param dropout: Dropout factor.
 
         Returns:
             out: Transformer encoder output.
@@ -197,15 +200,15 @@ class TransformerEncoder(nn.Module):
         self.embedding = Embedding(vocab_size, embed_dim)
         self.positional_encoding = PositionalEncoding(seq_len, embed_dim)
         self.layers = nn.ModuleList(
-            [TransformerBlock(embed_dim, expansion_factor, n_heads) \
+            [TransformerBlock(embed_dim, expansion_factor, n_heads, dropout) \
             for _ in range(num_layers)]
         )
 
-    def forward(self, x):
+    def forward(self, x, mask=None):
         x = self.embedding(x)
         out = self.positional_encoding(x)
         for layer in self.layers:
-            out = layer(out, out, out) # Query, Key, Value are the same.
+            out = layer(out, out, out, mask) # Query, Key, Value are the same.
         return out
     
 class Transformer(nn.Module):
@@ -218,7 +221,8 @@ class Transformer(nn.Module):
             expansion_factor=4,
             n_heads=8,
             task='LM',
-            num_classes=None
+            num_classes=None,
+            dropout=0.3
     ):
         """
         :param embed_dim: Embedding dimension.
@@ -234,6 +238,7 @@ class Transformer(nn.Module):
             need to provide the number of classes in the dataset.
         :param num_classes: Number of classes for classification if
             `task` 'CLS' is chosen. 
+        :param dropout: Dropout factor.
         """
         super(Transformer, self).__init__()
         self.encoder = TransformerEncoder(
@@ -242,7 +247,8 @@ class Transformer(nn.Module):
             embed_dim,
             num_layers,
             expansion_factor,
-            n_heads
+            n_heads,
+            dropout
         )
         self.task = task
         if task == 'CLS':
