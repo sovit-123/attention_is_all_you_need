@@ -1,7 +1,5 @@
 import torch
 
-from tqdm.auto import tqdm
-
 # From https://github.com/karpathy/nanoGPT/blob/master/train.py
 def get_batch(data, sequence_length, batch_size, device='cpu'):
     device_type = device
@@ -16,7 +14,7 @@ def get_batch(data, sequence_length, batch_size, device='cpu'):
     return x, y
 
 # Training function.
-def train(
+def train_step(
     model, 
     dataset_train, 
     optimizer, 
@@ -27,40 +25,28 @@ def train(
     device
 ):
     model.train()
-    print('Training')
-    train_running_loss = 0.0
-    counter = 0
-    for i in tqdm(
-        range(0, dataset_train.size(0), sequence_length), 
-        total=int(dataset_train.size(0)/sequence_length)
-    ):
-        counter += 1
-        inputs, labels = get_batch(
-            dataset_train, sequence_length, batch_size, device
-        )
-        optimizer.zero_grad()
-        # Forward pass.
-        outputs = model(inputs)
-        
-        labels = labels.contiguous().view(-1)
-        outputs = outputs.view(-1, vocab_size)
-        # Calculate the loss.
-        loss = criterion(
-            outputs, 
-            labels.type(torch.int64)
-        )
-        train_running_loss += loss.item()
-        # Backpropagation.
-        loss.backward()
-        # Update the optimizer parameters.
-        optimizer.step()
+    inputs, labels = get_batch(
+        dataset_train, sequence_length, batch_size, device
+    )
+    optimizer.zero_grad()
+    # Forward pass.
+    outputs = model(inputs)
     
-    # Loss and accuracy for the complete epoch.
-    epoch_loss = train_running_loss / counter
-    return epoch_loss
+    labels = labels.contiguous().view(-1)
+    outputs = outputs.view(-1, vocab_size)
+    # Calculate the loss.
+    loss = criterion(
+        outputs, 
+        labels.type(torch.int64)
+    )
+    # Backpropagation.
+    loss.backward()
+    # Update the optimizer parameters.
+    optimizer.step()
+    return loss
 
 # Validation function.
-def validate(
+def val_step(
     model, 
     dataset_valid, 
     criterion, 
@@ -70,33 +56,20 @@ def validate(
     device
 ):
     model.eval()
-    print('Validation')
-    valid_running_loss = 0.0
-    counter = 0
-    
-    for i in tqdm(
-        range(0, dataset_valid.size(0), sequence_length), 
-        total=int(dataset_valid.size(0)/sequence_length)
-    ):
-        counter += 1
-        inputs, labels = get_batch(
-            dataset_valid, sequence_length, batch_size, device
-        )
-        # Forward pass.
-        with torch.no_grad():
-            outputs = model(inputs)
-    
-        labels = labels.contiguous().view(-1)
-        # Calculate the loss.
-        loss = criterion(
-            outputs.view(-1, vocab_size), 
-            labels.type(torch.int64)
-        )
-        valid_running_loss += loss.item()
-        
-    # Loss and accuracy for the complete epoch.
-    epoch_loss = valid_running_loss / counter
-    return epoch_loss
+    inputs, labels = get_batch(
+        dataset_valid, sequence_length, batch_size, device
+    )
+    # Forward pass.
+    with torch.no_grad():
+        outputs = model(inputs)
+
+    labels = labels.contiguous().view(-1)
+    # Calculate the loss.
+    loss = criterion(
+        outputs.view(-1, vocab_size), 
+        labels.type(torch.int64)
+    )
+    return loss
 
 class NLPDataset():
     def __init__(self, file_path, enc):
