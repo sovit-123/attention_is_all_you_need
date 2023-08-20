@@ -5,6 +5,7 @@ A repository containing the implementation of [Attention is All You Need](https:
 
 ```
 git clone https://github.com/sovit-123/attention_is_all_you_need.git
+pip install requirements.txt
 pip install .
 ```
 
