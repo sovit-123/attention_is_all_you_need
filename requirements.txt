@@ -1,5 +1,8 @@
+# Recommended to intall PyTorch using Conda before executing this.
+
 torchtext
 torch
 spacy
 torchdata
 portalocker
+tiktoken
