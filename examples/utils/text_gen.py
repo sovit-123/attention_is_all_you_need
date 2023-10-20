@@ -1,5 +1,7 @@
 import torch
 
+import torch.nn.functional as F
+
 # From https://github.com/karpathy/nanoGPT/blob/master/train.py
 def get_batch(data, sequence_length, batch_size, device='cpu'):
     device_type = device
@@ -64,9 +66,10 @@ def val_step(
         outputs = model(inputs)
 
     labels = labels.contiguous().view(-1)
+    outputs = outputs.view(-1, vocab_size)
     # Calculate the loss.
     loss = criterion(
-        outputs.view(-1, vocab_size), 
+        outputs, 
         labels.type(torch.int64)
     )
     return loss
