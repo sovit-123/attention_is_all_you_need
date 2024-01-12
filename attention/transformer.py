@@ -162,13 +162,15 @@ class TransformerBlock(nn.Module):
         Returns:
             out: Output of the transformer block.
         """
-        x = self.attention(key, query, value, mask)
+        x = self.norm1(key)
+        x = self.attention(x, query, value, mask)
         x = x + value
-        x = self.dropout1(self.norm1(x))
+        x = self.dropout1(x)
+        x = self.norm2(x)
         ff = self.ffn(x)
         x = ff + x
-        out = self.dropout2(self.norm2(x))
-        return out
+        x = self.dropout2(x)
+        return x
 
 class TransformerEncoder(nn.Module):
     def __init__(
