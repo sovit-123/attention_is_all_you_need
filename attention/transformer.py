@@ -170,6 +170,7 @@ class TransformerBlock(nn.Module):
         ff = self.ffn(x)
         x = ff + x
         x = self.dropout2(x)
+
         return x
 
 class TransformerEncoder(nn.Module):
@@ -208,6 +209,7 @@ class TransformerEncoder(nn.Module):
         out = self.positional_encoding(x)
         for layer in self.layers:
             out = layer(out, out, out, mask) # Query, Key, Value are the same.
+
         return out
     
 class DecoderBlock(nn.Module):
@@ -220,7 +222,8 @@ class DecoderBlock(nn.Module):
         """
         super(DecoderBlock, self).__init__()
         self.attention = MultiHeadAttention(embed_dim, n_heads)
-        self.norm = nn.LayerNorm(embed_dim)
+        self.norm1 = nn.LayerNorm(embed_dim)
+        self.norm2 = nn.LayerNorm(embed_dim)
         self.dropout = nn.Dropout(dropout)
         self.transformer_block = TransformerBlock(
             embed_dim, expansion_factor, n_heads, dropout
@@ -235,10 +238,16 @@ class DecoderBlock(nn.Module):
         Returns:
             out: Output of the transformer block.
         """
-        attended = self.attention(x, x, x, mask=tgt_mask)
-        x = self.dropout(self.norm(attended + x))
-        attended = self.attention(enc_out, x, enc_out, mask=src_mask)
-        out = self.dropout(self.norm(x + attended))
+        # Apply pre-norm
+        x_norm = self.norm1(x)
+        attended = self.attention(x_norm, x_norm, x_norm, mask=tgt_mask)
+        x = x + self.dropout(attended)  # Add residual after attention
+        
+        # Apply pre-norm before second attention
+        x_norm = self.norm2(x)
+        attended = self.attention(enc_out, x_norm, enc_out, mask=src_mask)
+        out = x + self.dropout(attended)  # Add residual after second attention
+
         return out
     
 class TransformerDecoder(nn.Module):
