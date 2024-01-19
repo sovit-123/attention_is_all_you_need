@@ -4,4 +4,5 @@ outputs
 words.txt
 attention.egg-info/
 build/
-input/
+input/*
+!input/readme.txt

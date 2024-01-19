@@ -12,4 +12,10 @@ pip install .
 ## Executing Examples
 
 * All example notebooks/scripts are in the `examples` directory.
-* All models are in the `attenion` directory.
+* All models are in the `attention` directory.
+* All examples are self contained inside their respective directories in the `examples` folder except a few imports from the common `examples/utils` directory.
+
+## Data
+
+* Datasets smaller than 25 MB are in the `examples/data` directory.
+* Larger datasets are either automatically downloaded or need to manually put in the root folder `input` directory.
