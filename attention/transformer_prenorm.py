@@ -1,6 +1,6 @@
 """
-The original transformer model with encoder
-and masked decoder, and with post-LayerNorm.
+Mostly like the original transformer model with encoder
+and masked decoder but with pre-LayerNorm.
 """
 
 import torch
@@ -162,15 +162,14 @@ class TransformerBlock(nn.Module):
         Returns:
             out: Output of the transformer block.
         """
-        # Apply attention, then add residual connection, followed by normalization
-        attn_out = self.attention(key, query, value, mask)
-        x = key + self.dropout1(attn_out)
-        x = self.norm1(x)
-
-        # Apply feed-forward network, then add residual connection, followed by normalization
-        ffn_out = self.ffn(x)
-        x = x + self.dropout2(ffn_out)
+        x = self.norm1(key)
+        x = self.attention(x, query, value, mask)
+        x = x + value
+        x = self.dropout1(x)
         x = self.norm2(x)
+        ff = self.ffn(x)
+        x = ff + x
+        x = self.dropout2(x)
 
         return x
 
@@ -217,7 +216,7 @@ class DecoderBlock(nn.Module):
     def __init__(self, embed_dim, expansion_factor=4, n_heads=8, dropout=0.3):
         """
         :param embed_dim: Embedding dimension.
-        :param expansion_factor: Factor determining the feature dimension
+        :param exansion_factor: Factor determining the feature dimension
             of linear layers.
         :param n_heads: Number of attention heads.
         """
@@ -225,7 +224,6 @@ class DecoderBlock(nn.Module):
         self.attention = MultiHeadAttention(embed_dim, n_heads)
         self.norm1 = nn.LayerNorm(embed_dim)
         self.norm2 = nn.LayerNorm(embed_dim)
-        self.norm3 = nn.LayerNorm(embed_dim)
         self.dropout = nn.Dropout(dropout)
         self.transformer_block = TransformerBlock(
             embed_dim, expansion_factor, n_heads, dropout
@@ -233,31 +231,24 @@ class DecoderBlock(nn.Module):
 
     def forward(self, x, enc_out, src_mask=None, tgt_mask=None):    
         """
-        :param x: Input target vector.
-        :param enc_out: Encoder output.
-        :param src_mask: Mask for encoder output.
-        :param tgt_mask: Mask for decoder self-attention.
+        :param key: Key vector.
+        :param query: Query vector.
+        :param mask: Mask for multi-head attention.
 
         Returns:
-            out: Output of the decoder block.
+            out: Output of the transformer block.
         """
-        # Self-attention on target sequence
-        attn_out = self.attention(x, x, x, mask=tgt_mask)
-        x = x + self.dropout(attn_out)
-        x = self.norm1(x)
+        # Apply pre-norm
+        x_norm = self.norm1(x)
+        attended = self.attention(x_norm, x_norm, x_norm, mask=tgt_mask)
+        x = x + self.dropout(attended)  # Add residual after attention
+        
+        # Apply pre-norm before second attention
+        x_norm = self.norm2(x)
+        attended = self.attention(enc_out, x_norm, enc_out, mask=src_mask)
+        out = x + self.dropout(attended)  # Add residual after second attention
 
-        # Cross-attention with encoder output
-        attn_out = self.attention(enc_out, x, enc_out, mask=src_mask)
-        x = x + self.dropout(attn_out)
-        x = self.norm2(x)
-
-        # Feed-forward network
-        ffn_out = self.transformer_block.ffn(x)
-        x = x + self.dropout(ffn_out)
-        x = self.norm3(x)
-
-        return x
-
+        return out
     
 class TransformerDecoder(nn.Module):
     def __init__(
@@ -430,44 +421,3 @@ class Transformer(nn.Module):
         enc_out = self.encoder(src, src_mask)
         out = self.decoder(tgt, enc_out, src_mask, tgt_mask)
         return out
-    
-if __name__ == "__main__":
-    # Parameters for testing
-    embed_dim = 512
-    src_vocab_size = 10000
-    tgt_vocab_size = 10000
-    seq_len = 512
-    num_layers = 6
-    expansion_factor = 4
-    n_heads = 8
-    dropout = 0.3
-
-    # Create a dummy input tensor for testing
-    src_input = torch.randint(0, src_vocab_size, (1, seq_len))
-    tgt_input = torch.randint(0, tgt_vocab_size, (1, seq_len))
-
-    # Initialize the model with provided parameters
-    transformer_model = Transformer(
-        embed_dim,
-        src_vocab_size,
-        tgt_vocab_size,
-        seq_len,
-        num_layers=num_layers,
-        expansion_factor=expansion_factor,
-        n_heads=n_heads,
-        dropout=dropout
-    )
-
-    # Forward pass through the encoder and decoder to check shapes
-    src_mask = transformer_model.make_src_mask(src_input)
-    tgt_mask = transformer_model.make_tgt_mask(tgt_input)
-
-    enc_output = transformer_model.encoder(src_input, src_mask)
-    print(f"Encoder output shape: {enc_output.shape}")
-
-    dec_output = transformer_model.decoder(tgt_input, enc_output, src_mask, tgt_mask)
-    print(f"Decoder output shape: {dec_output.shape}")
-
-    # Forward pass through the entire model
-    out_labels = transformer_model(src_input, tgt_input)
-    print(f"Model output shape: {out_labels.shape}")

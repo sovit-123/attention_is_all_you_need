@@ -1,8 +1,11 @@
-# Recommended to intall PyTorch using Conda before executing this.
+# Recommended to intall PyTorch 2.2.0 with CUDA 11.8 using Conda before executing this.
 
-torchtext
-torch
+torchtext==0.17.0
 spacy
 torchdata
 portalocker
 tiktoken
+portalocker
+scikit-learn
+pandas
+numpy==1.26.0
